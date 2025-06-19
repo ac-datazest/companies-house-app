@@ -1,3 +1,6 @@
+def clean_postcode(pc):
+    return pc.upper().replace(" ", "").strip()
+
 import streamlit as st
 import requests
 import pandas as pd
@@ -113,6 +116,20 @@ def search_companies():
             if len(items) < 100:
                 break
 
+    # Apply manual postcode filtering
+    if uploaded_postcodes:
+        allowed = set(clean_postcode(pc) for pc in uploaded_postcodes)
+        collected = [
+            c for c in collected
+            if clean_postcode(c.get("registered_office_address", {}).get("postal_code", "")) in allowed
+        ]
+    elif postcode:
+        target = clean_postcode(postcode)
+        collected = [
+            c for c in collected
+            if clean_postcode(c.get("registered_office_address", {}).get("postal_code", "")) == target
+        ]
+
     return collected
 
 # --- MAIN APP ---
@@ -139,6 +156,11 @@ if st.button("Search Companies"):
 
             st.success(f"Returned {len(df)} companies.")
             st.dataframe(df)
+
+            csv = df.to_csv(index=False).encode("utf-8")
+            st.download_button("📥 Download CSV", data=csv, file_name="companies.csv", mime="text/csv")
+        else:
+            st.warning("No results found.")
 
             csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download CSV", data=csv, file_name="companies.csv", mime="text/csv")
