@@ -1,3 +1,6 @@
+def clean_postcode(pc):
+    return pc.upper().replace(" ", "").strip()
+
 import streamlit as st
 import requests
 import pandas as pd
@@ -5,6 +8,8 @@ from datetime import date, timedelta
 import hashlib
 
 # --- AUTH ---
+import hashlib
+
 def check_login():
     def login_entered():
         user_hash = st.secrets["users"].get(st.session_state["username"])
@@ -16,11 +21,11 @@ def check_login():
 
     if "authenticated" not in st.session_state:
         st.text_input("Username", key="username")
-        st.text_input("Password", type="password", on_change=login_entered, key="password")
+        st.text_input("Password", type="password", key="password", on_change=login_entered)
         st.stop()
     elif not st.session_state["authenticated"]:
         st.text_input("Username", key="username")
-        st.text_input("Password", type="password", on_change=login_entered, key="password")
+        st.text_input("Password", type="password", key="password", on_change=login_entered)
         st.error("❌ Incorrect username or password")
         st.stop()
 
@@ -77,39 +82,41 @@ with st.sidebar:
 def parse_sic_codes(raw_input):
     return [code.strip() for code in raw_input.split(",") if code.strip().isdigit()]
 
-def clean_postcode(pc):
-    return pc.upper().replace(" ", "").strip()
-
 # --- API QUERY FUNCTION ---
 def search_companies():
     collected = []
-    for start_index in range(0, max_results, 100):
-        params = {
-            "incorporated_from": incorp_from.strftime("%Y-%m-%d"),
-            "incorporated_to": incorp_to.strftime("%Y-%m-%d"),
-            "size": 100,
-            "start_index": start_index
-        }
-        if status:
-            params["company_status"] = status
-        if sic_input:
-            params["sic_codes"] = ",".join(parse_sic_codes(sic_input))
+    postcode_list = uploaded_postcodes if uploaded_postcodes else [postcode] if postcode else [None]
 
-        response = requests.get(BASE_URL, params=params, auth=(API_KEY, ""))
-        if response.status_code != 200:
-            st.error(f"Error {response.status_code}: {response.text}")
-            break
+    for pc in postcode_list:
+        for start_index in range(0, max_results, 100):
+            params = {
+                "incorporated_from": incorp_from.strftime("%Y-%m-%d"),
+                "incorporated_to": incorp_to.strftime("%Y-%m-%d"),
+                "size": 100,
+                "start_index": start_index
+            }
+            if pc:
+                params["registered_office_address.postal_code"] = pc
+            if status:
+                params["company_status"] = status
+            if sic_input:
+                params["sic_codes"] = ",".join(parse_sic_codes(sic_input))
 
-        data = response.json()
-        items = data.get("items", [])
-        if not items:
-            break
-        collected.extend(items)
+            response = requests.get(BASE_URL, params=params, auth=(API_KEY, ""))
+            if response.status_code != 200:
+                st.error(f"Error {response.status_code}: {response.text}")
+                break
 
-        if len(items) < 100:
-            break
+            data = response.json()
+            items = data.get("items", [])
+            if not items:
+                break
+            collected.extend(items)
 
-    # --- POSTCODE FILTERING (Manual) ---
+            if len(items) < 100:
+                break
+
+    # Apply manual postcode filtering
     if uploaded_postcodes:
         allowed = set(clean_postcode(pc) for pc in uploaded_postcodes)
         collected = [
@@ -155,7 +162,6 @@ if st.button("Search Companies"):
         else:
             st.warning("No results found.")
 
-            csv = df.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Download CSV", data=csv, file_name="companies.csv", mime="text/csv")
         else:
             st.warning("No results found.")
